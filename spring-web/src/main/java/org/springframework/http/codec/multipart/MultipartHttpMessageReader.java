@@ -36,6 +36,7 @@ import org.springframework.http.codec.HttpMessageReader;
 import org.springframework.http.codec.LoggingCodecSupport;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
+import org.springframework.util.ClassUtils;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 
@@ -59,6 +60,9 @@ public class MultipartHttpMessageReader extends LoggingCodecSupport
 	static final List<MediaType> MIME_TYPES = Collections.unmodifiableList(Arrays.asList(
 			MediaType.MULTIPART_FORM_DATA, MediaType.MULTIPART_MIXED, MediaType.MULTIPART_RELATED));
 
+
+	private static final boolean synchronossPresent = ClassUtils.isPresent(
+			"org.synchronoss.cloud.nio.multipart.NioMultipartParser", MultipartHttpMessageReader.class.getClassLoader());
 
 	private final HttpMessageReader<Part> partReader;
 
@@ -106,6 +110,7 @@ public class MultipartHttpMessageReader extends LoggingCodecSupport
 	}
 
 
+	@SuppressWarnings("unchecked")
 	@Override
 	public Mono<MultiValueMap<String, Part>> readMono(ResolvableType elementType,
 			ReactiveHttpInputMessage inputMessage, Map<String, Object> hints) {
@@ -115,6 +120,9 @@ public class MultipartHttpMessageReader extends LoggingCodecSupport
 
 		return this.partReader.read(elementType, inputMessage, allHints)
 				.collectMultimap(Part::name)
+				.doOnDiscard(Map.class, map ->
+						((Map<String, Collection<Part>>) map).values()
+								.forEach(parts -> parts.forEach(MultipartHttpMessageReader::deletePart)))
 				.doOnNext(map ->
 					LogFormatUtils.traceDebug(logger, traceOn -> Hints.getLogPrefix(hints) + "Parsed " +
 							(isEnableLoggingRequestDetails() ?
@@ -122,6 +130,13 @@ public class MultipartHttpMessageReader extends LoggingCodecSupport
 									"parts " + map.keySet() + " (content masked)"))
 				)
 				.map(this::toMultiValueMap);
+	}
+
+	private static void deletePart(Part part) {
+		// 5.2.x Part has no delete(): release the temporary file through the Synchronoss reader
+		if (synchronossPresent) {
+			SynchronossPartHttpMessageReader.deletePart(part);
+		}
 	}
 
 	private LinkedMultiValueMap<String, Part> toMultiValueMap(Map<String, Collection<Part>> map) {

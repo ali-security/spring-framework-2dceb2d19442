@@ -223,6 +223,13 @@ public class SynchronossPartHttpMessageReader extends LoggingCodecSupport implem
 	}
 
 
+	static void deletePart(Part part) {
+		if (part instanceof SynchronossPart) {
+			((SynchronossPart) part).getStorage().dispose();
+		}
+	}
+
+
 	/**
 	 * Subscribe to the input stream and feed the Synchronoss parser. Then listen
 	 * for parser output, creating parts, and pushing them into the FluxSink.
