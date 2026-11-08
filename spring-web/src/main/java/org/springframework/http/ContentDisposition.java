@@ -218,12 +218,12 @@ public final class ContentDisposition {
 		}
 		if (this.name != null) {
 			sb.append("; name=\"");
-			sb.append(this.name).append('\"');
+			appendName(sb, this.name).append('\"');
 		}
 		if (this.filename != null) {
 			if (this.charset == null || StandardCharsets.US_ASCII.equals(this.charset)) {
 				sb.append("; filename=\"");
-				sb.append(escapeQuotationsInFilename(this.filename)).append('\"');
+				sb.append(escapeQuotationsInFilename(stripControlCharacters(this.filename))).append('\"');
 			}
 			else {
 				sb.append("; filename*=");
@@ -295,7 +295,7 @@ public final class ContentDisposition {
 						part.substring(eqIndex + 2, part.length() - 1) :
 						part.substring(eqIndex + 1));
 				if (attribute.equals("name") ) {
-					name = value;
+					name = (value.indexOf('\\') != -1 ? decodeQuotedPairs(value) : value);
 				}
 				else if (attribute.equals("filename*") ) {
 					int idx1 = value.indexOf('\'');
@@ -427,6 +427,55 @@ public final class ContentDisposition {
 		return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
 				c == '!' || c == '#' || c == '$' || c == '&' || c == '+' || c == '-' ||
 				c == '.' || c == '^' || c == '_' || c == '`' || c == '|' || c == '~';
+	}
+
+	private static StringBuilder appendName(StringBuilder buffer, String name) {
+		for (int i = 0; i < name.length() ; i++) {
+			char c = name.charAt(i);
+			// strip control characters
+			if (c <= 0x1F || c == 0x7F) {
+				continue;
+			}
+			// encode quoted pairs
+			if (c == '"' || c == '\\') {
+				buffer.append('\\');
+			}
+			buffer.append(c);
+		}
+		return buffer;
+	}
+
+	// The filename keeps escapeQuotationsInFilename, so strip control characters before it runs
+	private static String stripControlCharacters(String value) {
+		StringBuilder sb = new StringBuilder(value.length());
+		for (int i = 0; i < value.length(); i++) {
+			char c = value.charAt(i);
+			if (c <= 0x1F || c == 0x7F) {
+				continue;
+			}
+			sb.append(c);
+		}
+		return sb.toString();
+	}
+
+	private static String decodeQuotedPairs(String value) {
+		StringBuilder sb = new StringBuilder(value.length());
+		int length = value.length();
+		for (int i = 0; i < length; i++) {
+			char c = value.charAt(i);
+			if (c == '\\' && i + 1 < length) {
+				i++;
+				char next = value.charAt(i);
+				if (next != '"' && next != '\\') {
+					sb.append(c);
+				}
+				sb.append(next);
+			}
+			else {
+				sb.append(c);
+			}
+		}
+		return sb.toString();
 	}
 
 	private static String escapeQuotationsInFilename(String filename) {
